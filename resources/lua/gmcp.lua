@@ -5,14 +5,18 @@ local function GMCP()
 	local self = {
 		receivers = {},
 		ready_listeners = {},
-		echo_gmcp = core:read("echo_gmcp") == "true",
-		gmcp_ready = core:read("gmcp_ready") == "true",
+		echo_gmcp = core:read("__echo_gmcp") == "true",
+		gmcp_ready = core:read("__gmcp_ready") == "true",
 	}
 
 	local function parse_gmcp(msg)
+		local mod = msg
+		local body = {}
 		local split = string.find(msg, " ")
-		local mod = string.sub(msg, 0, split-1)
-		local body = string.sub(msg, split)
+		if split ~= nil then
+			mod = string.sub(msg, 0, split-1)
+			body = string.sub(msg, split)
+		end
 		return mod, body
 	end
 
@@ -26,8 +30,9 @@ local function GMCP()
 
 	local _on_enable = function (proto)
 		if proto == OPT then
+			blight:debug("Sending Core.Hello")
 			self.gmcp_ready = true
-			core:store("gmcp_ready", "true")
+			core:store("__gmcp_ready", "true")
 			program, version = blight:version()
 			local hello_obj = {
 				Version=version,
@@ -54,7 +59,7 @@ local function GMCP()
 	end
 
 	local echo = function (enabled)
-		core:store("echo_gmcp", tostring(enabled))
+		core:store("__echo_gmcp", tostring(enabled))
 		self.echo_gmcp = enabled
 	end
 
@@ -77,6 +82,11 @@ local function GMCP()
 		end
 	end
 
+	local _reset = function ()
+		self.gmcp_ready = false
+		core:store("__gmcp_ready", tostring(false))
+	end
+
 	return {
 		on_ready = on_ready,
 		send = send,
@@ -85,6 +95,7 @@ local function GMCP()
 		echo = echo,
 		_subneg_recv = _subneg_recv,
 		_on_enable = _on_enable,
+		_reset = _reset,
 	}
 end
 
@@ -97,6 +108,9 @@ core:on_protocol_enabled(function (proto)
 end)
 core:subneg_recv(function (proto, data)
 	gmcp._subneg_recv(proto, data)
+end)
+blight:on_disconnect(function ()
+	gmcp._reset()
 end)
 
 return gmcp

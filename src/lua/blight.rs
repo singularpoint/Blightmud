@@ -203,10 +203,13 @@ impl UserData for Blight {
         methods.add_method(
             "read",
             |_, _, id: String| -> LuaResult<Option<BTreeMap<String, String>>> {
-                let data = StoreData::load().unwrap();
-                Ok(match data.get(&id) {
-                    Some(data) => Some(data.clone()),
-                    _ => None,
+                Ok(if let Ok(data) = StoreData::load() {
+                    match data.get(&id) {
+                        Some(data) => Some(data.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
                 })
             },
         );
@@ -375,6 +378,13 @@ impl UserData for Blight {
             ctx.globals().set(this.timer_table(), ctx.create_table()?)?;
             Ok(())
         });
+        methods.add_method("remove_timer", |ctx, this, timer_idx: u32| {
+            this.main_writer
+                .send(Event::RemoveTimer(timer_idx))
+                .unwrap();
+            let timer_table: rlua::Table = ctx.globals().get(this.timer_table())?;
+            timer_table.set(timer_idx, rlua::Nil)
+        });
         methods.add_method("status_height", |_, this, height: u16| {
             this.main_writer
                 .send(Event::StatusAreaHeight(height))
@@ -388,10 +398,16 @@ impl UserData for Blight {
             Ok(())
         });
         methods.add_method("on_connect", |ctx, _, callback: rlua::Function| {
-            ctx.globals().set(ON_CONNCTION_CALLBACK, callback)
+            let globals = ctx.globals();
+            let table: rlua::Table = globals.get(ON_CONNECTION_CALLBACK_TABLE)?;
+            table.raw_set(table.raw_len() + 1, callback)?;
+            Ok(())
         });
         methods.add_method("on_disconnect", |ctx, _, callback: rlua::Function| {
-            ctx.globals().set(ON_DISCONNECT_CALLBACK, callback)
+            let globals = ctx.globals();
+            let table: rlua::Table = globals.get(ON_DISCONNECT_CALLBACK_TABLE)?;
+            table.set(table.raw_len() + 1, callback)?;
+            Ok(())
         });
         methods.add_method("version", |_, _, _: ()| -> LuaResult<(&str, &str)> {
             Ok((PROJECT_NAME, VERSION))
